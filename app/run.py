@@ -11,7 +11,6 @@ def resolve_path(path):
 
 if __name__ == "__main__":
     path = resolve_path("front.py")
-    path = "C:\\Users\\orlan\\Documents\\Documents\\omni-raids\\app\\front.py"
     sys.argv = [
         "streamlit",
         "run",
