@@ -1,0 +1,13 @@
+# Use the official PostgreSQL image
+FROM postgres:latest AS db
+
+# Copy the initialization script
+COPY init.sql /docker-entrypoint-initdb.d/
+
+# Expose the PostgreSQL port
+EXPOSE 5432
+
+# Environment variables (optional)
+ENV POSTGRES_DB=user_logs
+ENV POSTGRES_USER=adm
+ENV POSTGRES_PASSWORD=supersecret
