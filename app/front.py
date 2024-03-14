@@ -25,7 +25,7 @@ def connect_to_database():
         dbname="user_logs",
         user="adm",
         password="supersecret",
-        host="db", # if u want to run it local you need to set this host value to localhost
+        host="db",
         port="5432"
     )
 
@@ -608,11 +608,13 @@ def main():
             dmg_df = summarize_logs_filtered(conn, sidebar_fields['faction_filter'],
                                              sidebar_fields['location_filter'], start_datetime, end_datetime, 'Damage')
             if not dmg_df.empty:
+                dmg_table=dmg_df
                 dmg_df['Time'] = pd.to_datetime(dmg_df['Time'])
                 dmg_df = dmg_df.groupby(['Faction', pd.Grouper(key='Time')])[
                     'Total'].sum().reset_index()
                 st.bar_chart(dmg_df, x='Time', y='Total',
                              color='Faction', use_container_width=True)
+                st.table(dmg_table)
 
         elif report_option == "Heals":
             st.write("### Heal to Players by Faction")
@@ -620,25 +622,29 @@ def main():
             heal_df = summarize_logs_filtered(conn, sidebar_fields['faction_filter'],
                                               sidebar_fields['location_filter'], start_datetime, end_datetime, 'Heal')
             if not heal_df.empty:
+                heal_table=heal_df
                 heal_df['Time'] = pd.to_datetime(
                     heal_df['Time'])
                 heal_df = heal_df.groupby(['Faction', pd.Grouper(key='Time')])[
                     'Total'].sum().reset_index()
                 st.bar_chart(heal_df, x='Time', y='Total',
                              color='Faction', use_container_width=True)
-
+                st.table(heal_table)
+                
         elif report_option == "Pve damage":
             st.write("### Pve Damage by Faction")
             st.write("Timechart")
             pve_df = summarize_logs_filtered_on_mobs(
                 conn, sidebar_fields['faction_filter'], sidebar_fields['location_filter'], start_datetime, end_datetime, 'Damage')
             if not pve_df.empty:
+                pve_table = pve_df
                 pve_df['Time'] = pd.to_datetime(
                     pve_df['Time'])
                 pve_df = pve_df.groupby(['Faction', pd.Grouper(key='Time')])[
                     'Total'].sum().reset_index()
                 st.bar_chart(pve_df, x='Time', y='Total',
                              color='Faction', use_container_width=True)
+                st.table(pve_table)
 
         elif report_option == "Top users by faction":
             st.title("Top users by faction")
