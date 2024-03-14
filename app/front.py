@@ -1,5 +1,4 @@
 import hashlib
-import sqlite3
 import psycopg2
 from datetime import datetime, timedelta
 from typing import List
@@ -22,12 +21,11 @@ def generate_hash(string):
 
 
 def connect_to_database():
-    # return sqlite3.connect("user_logs.db")
     return psycopg2.connect(
         dbname="user_logs",
         user="adm",
         password="supersecret",
-        host="localhost",
+        host="db", # if u want to run it local you need to set this host value to localhost
         port="5432"
     )
 
