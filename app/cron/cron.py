@@ -1,9 +1,7 @@
-import csv
-import os
+import functools
 import re
-import sqlite3
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime
 import psycopg2
 import schedule
 import time
@@ -12,9 +10,19 @@ COMBAT_LOG = "C:\\Users\\orlan\\Documents\\ArcheRage\\Combat.log"
 MISC_LOG = "C:\\Users\\orlan\\Documents\\ArcheRage\\Misc.log"
 OUTPUT_DIR = "output"
 
+def log_function_call(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        now = datetime.now()
+        print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: {func.__name__}.")
+        return func(*args, **kwargs)
+    return wrapper
 
+@log_function_call
 def connect_to_database():
-    # return sqlite3.connect("user_logs.db")
+    """
+    Connects to the PostgreSQL database.
+    """
     return psycopg2.connect(
         dbname="user_logs",
         user="adm",
@@ -23,24 +31,33 @@ def connect_to_database():
         port="5432"
     )
 
-# Function to generate a unique hash for a given string
 def generate_hash(string):
+    """
+    Generates a unique hash for a given string.
+    """
     return hashlib.md5(string.encode()).hexdigest()
 
-# Function to parse datetime from string
 def parse_datetime(date_str):
+    """
+    Parses a datetime object from a string.
+    """
     if date_str == 'N/A':
         return None
     return datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
 
-# Function to check if log time falls within the duration of entry and exit time for a location
 def is_within_duration(log_time, enter_time, exit_time):
+    """
+    Checks if a log time falls within the duration of entry and exit time for a location.
+    """
     if enter_time is None or exit_time is None:
         return False
     return enter_time <= log_time <= exit_time
 
-# Function to parse combat logs
+@log_function_call
 def parse_combat(start_time=None, end_time=None, target_name=None):
+    """
+    Parses combat logs.
+    """
     combat_logs = []
     damage_regex = re.compile(r"<(?P<log_time_str>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?P<character>.*?)\|r attacked (?P<receiver>.*?)\|r using \|cff25fcff(.*?)\|r and caused \|cffff0000\-(?P<total>\d+)")
     heal_regex = re.compile(r"<(?P<log_time_str>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?P<character>.*?)\|r targeted (?P<receiver>[^|]+)\|[^|]+\|cff25fcff(?P<ability>[^|]+)\|[^|]+\|cff00ff00(?P<restored>[^|]+)\|r health.")
@@ -78,8 +95,11 @@ def parse_combat(start_time=None, end_time=None, target_name=None):
 
     return combat_logs
 
-# Function to parse location logs
+@log_function_call
 def parse_location():
+    """
+    Parses location logs.
+    """
     location_logs = {}
     regex_enter = r"<(?P<log_timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})Entering Chat: \d+\.(?P<filter>Shout)\. (?P<log_location>[\w\s]+)"
     regex_leave = r"<(?P<log_timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})Leaving Chat: \d+\.(?P<filter>Shout)\. (?P<log_location>[\w\s]+)"
@@ -113,8 +133,11 @@ def parse_location():
                 pass
     return location_logs
 
-# Function to merge combat and location logs
+@log_function_call
 def merge_logs():
+    """
+    Merges combat and location logs.
+    """
     location_logs = parse_location()
     combat_logs = parse_combat()
 
@@ -128,8 +151,11 @@ def merge_logs():
 
     return merged_logs
 
-# Function to create a SQLite database and tables if they don't exist
+@log_function_call
 def create_database():
+    """
+    Creates the database and tables if they don't exist.
+    """
     conn = connect_to_database()
     cursor = conn.cursor()
 
@@ -154,8 +180,11 @@ def create_database():
     conn.commit()
     conn.close()
 
-# Function to insert user data into the database
+@log_function_call
 def insert_user_data(user_hash, user_name, faction=None):
+    """
+    Inserts user data into the database.
+    """
     if ' ' in user_name:
         faction = 'Mob'
     conn = connect_to_database()
@@ -169,8 +198,11 @@ def insert_user_data(user_hash, user_name, faction=None):
     conn.commit()
     conn.close()
 
-# Function to insert log data into the database
+@log_function_call
 def insert_log_data(log_data):
+    """
+    Inserts log data into the database.
+    """
     conn = connect_to_database()
     cursor = conn.cursor()
     cursor.execute("""
@@ -180,25 +212,114 @@ def insert_log_data(log_data):
         """, log_data)
     conn.commit()
     conn.close()
-
-# Function to import log data into the database
+    
+@log_function_call
 def import_logs():
+    """
+    Imports log data into the database in batches.
+    """
     now = datetime.now()
     print("> ", now.strftime("%Y-%m-%d %H:%M:%S"), ": importing logs.")
     merged_logs = merge_logs()
 
+    batch_size = 1000  # Adjust batch size as needed
+    batch_logs = []
+    batch_users = set()
+
     for l in merged_logs:
         log = list(l)
         log[1] = str(log[1].strftime('%Y-%m-%d %H:%M:%S'))
-        log_data = (log[0], log[1], log[2], log[3], int(log[4]), log[5], generate_hash(",".join(log)), generate_hash(log[2]), generate_hash(log[3]))
-        insert_log_data(log_data)
-        insert_user_data(log_data[7], log[2])
-        insert_user_data(log_data[8], log[3])
-    
+        log_hash = generate_hash(",".join(log))
+
+        # Skip duplicate log entries
+        if log_hash in batch_logs:
+            continue
+        else:
+            batch_logs.append(log_hash)
+
+        log_data = (log[0], log[1], log[2], log[3], int(log[4]), log[5], log_hash, generate_hash(log[2]), generate_hash(log[3]))
+        batch_users.add((log_data[7], log[2]))  # Collect user data for batch insertion
+        batch_users.add((log_data[8], log[3]))
+
+    # Insert user data in batches
+    insert_batch_user_data(batch_users)
+
+    # Insert log data in batches
+    insert_batch_log_data(merged_logs)
+
     now = datetime.now()
     print("> ", now.strftime("%Y-%m-%d %H:%M:%S"), ": finished.")
 
+@log_function_call
+def insert_batch_user_data(batch_users):
+    """
+    Inserts batch user data into the database using prepared statements.
+    """
+    conn = connect_to_database()
+    cursor = conn.cursor()
+
+    try:
+        cursor.executemany("""
+            INSERT INTO users (user_hash, user_name, faction)
+            VALUES (%s, %s, NULL)
+            ON CONFLICT (user_hash) DO NOTHING;
+            """, batch_users)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print("Error inserting batch user data:", e)
+    finally:
+        conn.close()
+
+@log_function_call
+def insert_batch_log_data(merged_logs):
+    """
+    Inserts batch log data into the database using prepared statements.
+    """
+    conn = connect_to_database()
+    cursor = conn.cursor()
+
+    batch_size = 1000  # Adjust batch size as needed
+    batch = []
+
+    for l in merged_logs:
+        log = list(l)
+        log[1] = str(log[1].strftime('%Y-%m-%d %H:%M:%S'))
+        log_hash = generate_hash(",".join(log))
+        log_data = (log[0], log[1], log[2], log[3], int(log[4]), log[5], log_hash, generate_hash(log[2]), generate_hash(log[3]))
+        batch.append(log_data)
+
+        # Insert batch into the database when it reaches the batch size
+        if len(batch) >= batch_size:
+            insert_batch_log_data_single(conn, batch)
+            batch = []
+
+    # Insert any remaining entries in the batch
+    if batch:
+        insert_batch_log_data_single(conn, batch)
+
+    conn.close()
+
+@log_function_call
+def insert_batch_log_data_single(conn, batch):
+    """
+    Inserts batch log data into the database using prepared statements (single insert).
+    """
+    cursor = conn.cursor()
+    try:
+        args_str = ','.join(cursor.mogrify("(%s,%s,%s,%s,%s,%s,%s,%s,%s)", x).decode() for x in batch)
+        insert_query = "INSERT INTO logs (log_type, time, character, receiver, total, location, log_id, character_id, receiver_id) VALUES " + args_str + " ON CONFLICT (log_id) DO NOTHING;"
+        cursor.execute(insert_query)
+        conn.commit()  # Commit the transaction after successful insertion
+    except Exception as e:
+        print("Error inserting batch log data:", e)
+        conn.rollback()  # Rollback the transaction if an error occurs
+
+@log_function_call
 def schedule_import():
+    """
+    Schedules the import of logs at regular intervals.
+    """
     schedule.every().hour.do(import_logs) 
 
     while True:
@@ -207,7 +328,7 @@ def schedule_import():
 
 if __name__ == "__main__":
     now = datetime.now()
-    print("> ", now.strftime("%Y-%m-%d %H:%M:%S"), ": log import running.")
+    print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: log import running.")
     create_database()
     schedule_import()
     #import_logs()
