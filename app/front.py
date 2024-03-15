@@ -351,7 +351,7 @@ def get_top_users_by_faction(cursor, log_type, faction_filter, location_filter=[
         factions.append(filter)
     top_users_by_faction = {}
     for faction in factions:
-        query = """SELECT user_name, COUNT(*) FROM logs JOIN users ON logs.character_id = users.user_hash """
+        query = """SELECT user_name, COUNT(*), SUM(logs.total) as t FROM logs JOIN users ON logs.character_id = users.user_hash """
         filters = ["logs.receiver_id != 'Mob'", f"logs.log_type = '{log_type}'"]
         filters.append(f"users.faction = '{faction}'")
         if len(location_filter) > 0:
@@ -364,7 +364,7 @@ def get_top_users_by_faction(cursor, log_type, faction_filter, location_filter=[
             filters.append(f"logs.time <= '{end_datetime}'")
         if filters:
             query += " WHERE " + " AND ".join(filters)
-        query += " GROUP BY user_name ORDER BY COUNT(*) DESC LIMIT 20"
+        query += " GROUP BY user_name ORDER BY t DESC LIMIT 20"
         cursor.execute(query)
         top_users_by_faction[faction] = cursor.fetchall()
     return top_users_by_faction
@@ -665,10 +665,10 @@ def main():
 
             for faction, top_users in top_users_by_faction.items():
                 st.subheader(f"Top 20 users of {faction}.")
-                table_data = [(f"{i}. {user_name}", log_count)
-                              for i, (user_name, log_count) in enumerate(top_users, 1)]
+                table_data = [(f"{i}. {user_name}", log_count, t)
+                              for i, (user_name, log_count, t) in enumerate(top_users, 1)]
                 df_top_pvp = pd.DataFrame(
-                    table_data, columns=["User", "Log Count"])
+                    table_data, columns=["User", "Log Count", "Total"])
                 st.table(df_top_pvp)
         
     conn.close()
