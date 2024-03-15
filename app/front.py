@@ -351,8 +351,12 @@ def get_top_users_by_faction(cursor, log_type, faction_filter, location_filter=[
         factions.append(filter)
     top_users_by_faction = {}
     for faction in factions:
-        query = """SELECT user_name, COUNT(*), SUM(logs.total) as t FROM logs JOIN users ON logs.character_id = users.user_hash """
-        filters = ["logs.receiver_id != 'Mob'", f"logs.log_type = '{log_type}'"]
+        query = """SELECT users.user_name, COUNT(*), SUM(logs.total) as t FROM logs JOIN users ON logs.character_id = users.user_hash """
+        filters = [f"logs.log_type = '{log_type}'"]
+        if log_type == "Damage":
+           query += "JOIN users AS recv_users ON recv_users.user_hash = logs.receiver_id "
+           filters.append("recv_users.faction <> 'Mob'")
+        
         filters.append(f"users.faction = '{faction}'")
         if len(location_filter) > 0:
             for location in location_filter:
@@ -364,7 +368,7 @@ def get_top_users_by_faction(cursor, log_type, faction_filter, location_filter=[
             filters.append(f"logs.time <= '{end_datetime}'")
         if filters:
             query += " WHERE " + " AND ".join(filters)
-        query += " GROUP BY user_name ORDER BY t DESC LIMIT 20"
+        query += " GROUP BY users.user_name ORDER BY t DESC LIMIT 20"
         cursor.execute(query)
         top_users_by_faction[faction] = cursor.fetchall()
     return top_users_by_faction
