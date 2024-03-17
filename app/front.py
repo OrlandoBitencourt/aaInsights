@@ -85,11 +85,13 @@ def summarize_logs_filtered(conn, faction_filter, location_filter, start_datetim
     if "*" in faction_filter:
         faction = ["East", "West", "Pirate"]
     else:
-        for filter in faction_filter:
-            if filter in ["East", "West", "Pirate"]:
-                filters.append(faction)
-    if faction_filter and len(faction) > 0:
+        for f in faction_filter:
+            if f in ["East", "West", "Pirate"]:
+                faction.append(f)
+    if faction_filter and len(faction) > 1:
         filters.append(f"users.faction IN {tuple(faction)}")
+    elif faction_filter and len(faction) == 1:
+        filters.append(f"users.faction = '{faction[0]}'")
     if location_filter:
         if len(location_filter) == 1:
             filters.append(f"logs.location = '{location_filter[0]}'")
@@ -130,11 +132,13 @@ def summarize_logs_filtered_on_mobs(conn, faction_filter, location_filter, start
     if "*" in faction_filter:
         faction = ["East", "West", "Pirate"]
     else:
-        for filter in faction_filter:
-            if filter in ["East", "West", "Pirate"]:
-                filters.append(faction)
-    if faction_filter and len(faction) > 0:
+        for f in faction_filter:
+            if f in ["East", "West", "Pirate"]:
+                faction.append(f)
+    if faction_filter and len(faction) > 1:
         filters.append(f"char_users.faction IN {tuple(faction)}")
+    elif faction_filter and len(faction) == 1:
+        filters.append(f"char_users.faction = '{faction[0]}'")
     for filter in location_filter:
         if filter:
             filters.append(f"logs.location = %s")
