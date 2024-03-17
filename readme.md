@@ -1,8 +1,8 @@
 # AA Insights
 
-![logo300x300)](https://github.com/OrlandoBitencourt/aaInsights/assets/11688998/217771eb-1bae-41b7-a744-88a5d31a21af)
-
 This project is an AA Insights, which provides various functionalities for analyzing user logs within the ArcheRage game environment. The analyzer is built using Python and utilizes Streamlit for the web interface.
+
+![logo300x300)](https://github.com/OrlandoBitencourt/aaInsights/assets/11688998/217771eb-1bae-41b7-a744-88a5d31a21af)
 
 ## Project Structure
 
