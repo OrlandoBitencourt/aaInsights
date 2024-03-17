@@ -10,7 +10,7 @@ from streamlit_option_menu import option_menu
 
 st.set_page_config(
     page_title='ArcheRage Insights',
-    page_icon='chart_with_upwards_trend',
+    page_icon='logo.ico',
     layout='wide',
     initial_sidebar_state='expanded'
 )
