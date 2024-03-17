@@ -67,45 +67,21 @@ def get_locations(_conn):
     return [loc[0] for loc in locations]
 
 
-def filter_mob_logs(conn):
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_hash FROM users WHERE faction = 'Mob'")
-    mob_user_hashes = cursor.fetchall()
-    mob_user_hashes = [user_hash[0] for user_hash in mob_user_hashes]
-
-    placeholder = ",".join(["%s" for _ in mob_user_hashes])
-    cursor.execute(
-        f"SELECT log_id FROM logs WHERE character_id IN ({placeholder}) OR receiver_id IN ({placeholder})",
-        (*mob_user_hashes, *mob_user_hashes))
-    mob_log_ids = cursor.fetchall()
-
-    return [log_id[0] for log_id in mob_log_ids]
-
-
-def filter_damage_mob_logs(conn):
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT user_hash FROM users WHERE faction = 'Mob'")
-    mob_user_hashes = cursor.fetchall()
-    mob_user_hashes = [user_hash[0] for user_hash in mob_user_hashes]
-
-    placeholder = ",".join(["?" for _ in mob_user_hashes])
-    query = f"SELECT log_id FROM logs WHERE receiver_id IN ({placeholder})"
-    cursor.execute(query, mob_user_hashes)
-    mob_log_ids = cursor.fetchall()
-
-    return [log_id[0] for log_id in mob_log_ids]
-
-
-def summarize_logs_filtered(conn, faction_filter, location_filter, start_datetime, end_datetime, log_type_filter):
+def summarize_logs_filtered(conn, faction_filter, location_filter, start_datetime, end_datetime, log_type_filter, only_pvp=True):
     cursor = conn.cursor()
     query = """
         SELECT logs.log_id, users.faction, logs.location, logs.log_type, logs.time, logs.character, logs.receiver, SUM(logs.total) AS total
-        FROM logs
-        JOIN users ON users.user_hash = logs.character_id OR users.user_hash = logs.receiver_id
+        FROM logs 
         """
     filters = []
-    faction = []
+    faction = [] 
+    if only_pvp is True:
+        query += """ 
+        JOIN users ON user_hash = logs.character_id AND faction <> 'Mob'
+        JOIN users AS recv_users ON recv_users.user_hash = logs.receiver_id AND recv_users.faction <> 'Mob'"""
+    else:
+        query += """ 
+        JOIN users ON user_hash = logs.character_id AND faction <> 'Mob' """
     if "*" in faction_filter:
         faction = ["East", "West", "Pirate"]
     else:
@@ -131,11 +107,9 @@ def summarize_logs_filtered(conn, faction_filter, location_filter, start_datetim
 
     query += " GROUP BY logs.log_id, users.faction, logs.location, logs.log_type, logs.time, logs.character, logs.receiver"
 
-    cursor.execute(query)  # Pass the params as a single tuple
+    cursor.execute(query)
     data = cursor.fetchall()
     df = pd.DataFrame(data, columns=["Log ID", "Faction", "Location", "Log Type", "Time",  "Character",  "Target",  "Total"])
-    mob_log_ids = filter_mob_logs(conn)
-    df = df[~df["Log ID"].isin(mob_log_ids)]
 
     return df
 
@@ -199,21 +173,27 @@ def get_totalizers(df):
     return totalizers
 
 
-def get_date_minus_24h():
-    current_date = datetime.now().date()
-    date_minus_24h = current_date - timedelta(days=1)
-    return date_minus_24h
+def get_default_start_time():
+    current_date = datetime.now()
+    default_start_time = current_date - timedelta(minutes=15)
+    return default_start_time
 
 
-def summarize_logs(conn, faction_filter, location_filter, start_datetime, end_datetime, log_type_filter=None):
+def summarize_logs(conn, faction_filter, location_filter, start_datetime, end_datetime, log_type_filter=None, only_pvp=True):
     cursor = conn.cursor()
     query = """
         SELECT logs.log_id, users.faction, logs.location, logs.log_type, logs.time, logs.character, logs.receiver, SUM(logs.total) AS total
         FROM logs
-        JOIN users ON users.user_hash = logs.character_id OR users.user_hash = logs.receiver_id
         """
     filters = []
     factions = []
+    if only_pvp is True:
+        query += """ 
+        JOIN users ON user_hash = logs.character_id AND faction <> 'Mob'
+        JOIN users AS recv_users ON recv_users.user_hash = logs.receiver_id AND recv_users.faction <> 'Mob'"""
+    else:
+        query += """ 
+        JOIN users ON user_hash = logs.character_id AND faction <> 'Mob' """
     for filter in faction_filter:
         if "*" in filter:
             factions = ['East', 'West', 'Pirate']
@@ -239,9 +219,6 @@ def summarize_logs(conn, faction_filter, location_filter, start_datetime, end_da
     cursor.execute(query)
     data = cursor.fetchall()
     df = pd.DataFrame(data, columns=["Log ID", "Faction", "Location", "Log Type", "Time",  "Character",  "Target",  "Total"])
-    mob_log_ids = filter_mob_logs(conn)
-    df = df[~df["Log ID"].isin(mob_log_ids)]
-
     return df
 
 
@@ -255,15 +232,21 @@ def get_total_counts(conn):
     return total_users, total_logs
 
 
-def summarize_logs_paginated(conn, faction_filter, location_filter, start_datetime, end_datetime, page_number, page_size):
+def summarize_logs_paginated(conn, faction_filter, location_filter, start_datetime, end_datetime, page_number, page_size, log_type, only_pvp):
     cursor = conn.cursor()
     query = """
         SELECT logs.log_id, users.faction, logs.location, logs.log_type, logs.time, logs.character, logs.receiver, SUM(logs.total) AS total
         FROM logs
-        JOIN users ON users.user_hash = logs.character_id
-        """
+        """ 
     filters = []
     factions = []
+    if only_pvp is True:
+        query += """ 
+        JOIN users ON user_hash = logs.character_id AND faction <> 'Mob'
+        JOIN users AS recv_users ON recv_users.user_hash = logs.receiver_id AND recv_users.faction <> 'Mob'"""
+    else:
+        query += """ 
+        JOIN users ON user_hash = logs.character_id AND faction <> 'Mob' """
     for filter in faction_filter:
         if "*" in filter:
             factions = ['East', 'West', 'Pirate']
@@ -281,6 +264,8 @@ def summarize_logs_paginated(conn, faction_filter, location_filter, start_dateti
         filters.append(f"time >= '{start_datetime}'")
     if end_datetime:
         filters.append(f"time <= '{end_datetime}'")
+    if log_type:
+        filters.append(f"log_type = '{log_type}'")
     if filters:
         query += " WHERE " + " AND ".join(filters)
 
@@ -295,7 +280,7 @@ def summarize_logs_paginated(conn, faction_filter, location_filter, start_dateti
 
 
 def paginate(page, page_size):
-    page = max(1, page)  # Ensure page number is at least 1
+    page = max(1, page) 
     offset = (page - 1) * page_size
     return page, offset
 
@@ -336,8 +321,8 @@ def create_report_filter_sidebar(locations: List[str]):
     sidebar_fields['faction_filter'] = filter_sidebar.multiselect(
         "Select Faction", ["East", "West", "Pirate", "*"], "*")
     sidebar_fields['start_date'] = filter_sidebar.date_input(
-        "Start Date", get_date_minus_24h())
-    sidebar_fields['start_time'] = filter_sidebar.time_input("Start Time", step=300)
+        "Start Date", get_default_start_time())
+    sidebar_fields['start_time'] = filter_sidebar.time_input("Start Time", step=300, value=get_default_start_time())
     sidebar_fields['end_date'] = filter_sidebar.date_input("End Date")
     sidebar_fields['end_time'] = filter_sidebar.time_input("End Time", step=300)
     return filter_sidebar, sidebar_fields
@@ -414,8 +399,42 @@ def get_users_filtered(conn, faction_filter, name_filter):
     df_user = pd.DataFrame(user_data, columns=[
                             "User Hash", "User Name", "Faction"])
     return df_user
+
+def check_users_faction(conn):
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT 
+            COUNT(CASE WHEN faction = 'East' THEN 1 END) AS East_Count,
+            COUNT(CASE WHEN faction = 'West' THEN 1 END) AS West_Count,
+            COUNT(CASE WHEN faction = 'Pirate' THEN 1 END) AS Pirate_Count,
+            COUNT(CASE WHEN faction = 'Mob' THEN 1 END) AS Mob_Count,
+            COUNT(CASE WHEN faction is null THEN 1 END) AS Empty_Count
+        FROM users;
+    """
+    )
+    result = cursor.fetchall()
+    if len(result) > 0:
+        result = dict(
+            east=result[0][0],
+            west=result[0][1],
+            pirate=result[0][2],
+            mob=result[0][3],
+            empty=result[0][4],
+            asv=0,
+        )
+        return result
+    return {}
+
+def error_faction_modal():
+    st.error('#### ⚠️ You need to set at least one user for each faction to see other reports properlly. Go to *users* -> *user table* page and set at least one user for each faction.')
         
-        
+def validate_users_in_factions(conn):
+    with st.container():
+        faction_info = check_users_faction(conn)
+        if faction_info.get('mob') == 0 or faction_info.get('east') == 0 or faction_info.get('west') == 0 or faction_info.get('pirate') == 0:
+            error_faction_modal()
+
 def main():
     conn = connect_to_database()
     create_tables(conn)
@@ -428,11 +447,18 @@ def main():
     )
 
     if page == "Main":
-        total_users, total_logs = get_total_counts(conn)
+        validate_users_in_factions(conn)
+        
+        with st.container():
+            left_co, cent_co,last_co = st.columns(3)
+            with left_co:
+                st.image("logo.png", width=300)
+            with cent_co:
+                total_users, total_logs = get_total_counts(conn)
 
-        st.write("### Your current database overview")
-        st.write(f"##### - Total users: {total_users}.")
-        st.write(f"##### - Total logs: {total_logs}.")
+                st.write("### Your current database overview")
+                st.write(f"##### - Total users: {total_users}.")
+                st.write(f"##### - Total logs: {total_logs}.")
 
     elif page == "Users":
         report_option = st.selectbox('Select a report', ['User table', 'Faction distribution', 'User logs by location',
@@ -574,8 +600,15 @@ def main():
         report_option = st.selectbox('Select a report', ['Overview', 'Pvp damage', 'Heals', 'Pve damage',
                                      'Top users by faction'], index=0, placeholder="Choose an option", disabled=False)
         if report_option == 'Overview':
-            logs_summary = summarize_logs(conn, sidebar_fields['faction_filter'],
-                                          sidebar_fields['location_filter'], start_datetime, end_datetime)
+            logs_summary = summarize_logs(
+                conn, 
+                sidebar_fields['faction_filter'],
+                sidebar_fields['location_filter'], 
+                start_datetime, 
+                end_datetime,
+                log_type_filter=None,
+                only_pvp=True
+            )
             totalizers = get_totalizers(logs_summary)
 
             st.write("## Totalizers")
@@ -603,7 +636,17 @@ def main():
 
             # Get logs for current page
             logs_table = summarize_logs_paginated(
-                conn, sidebar_fields['faction_filter'], sidebar_fields['location_filter'], start_datetime, end_datetime, page, page_size)
+                conn=conn, 
+                faction_filter=sidebar_fields['faction_filter'],
+                location_filter=sidebar_fields['location_filter'], 
+                start_datetime=start_datetime, 
+                end_datetime=end_datetime, 
+                page_number=page, 
+                page_size=page_size, 
+                log_type=None,
+                only_pvp=False
+            )
+            
             st.table(logs_table)
 
         elif report_option == "Pvp damage":
@@ -612,13 +655,42 @@ def main():
             dmg_df = summarize_logs_filtered(conn, sidebar_fields['faction_filter'],
                                              sidebar_fields['location_filter'], start_datetime, end_datetime, 'Damage')
             if not dmg_df.empty:
-                dmg_table=dmg_df
                 dmg_df['Time'] = pd.to_datetime(dmg_df['Time'])
                 dmg_df = dmg_df.groupby(['Faction', pd.Grouper(key='Time')])[
                     'Total'].sum().reset_index()
                 st.bar_chart(dmg_df, x='Time', y='Total',
                              color='Faction', use_container_width=True)
-                st.table(dmg_table)
+                
+                column_page_number, column_page_size, column_page_navigation = st.columns(
+                3)
+                with column_page_number:
+                    page = st.number_input("Page", 1, step=1, value=1)
+                with column_page_size:
+                    page_size = st.number_input("Page Size", 1, step=1, value=20)
+                with column_page_navigation:
+                    prev_page, _ = paginate(page - 1, page_size)
+                    next_page, _ = paginate(page + 1, page_size)
+
+                    st.write('Paginated view of logs navigation:')
+                    column_prev, column_next = st.columns(2)
+                    with column_prev:
+                        if st.button('Prev'):
+                            page, _ = paginate(page - 1, page_size)
+                    with column_next:
+                        if st.button('Next'):
+                            page, _ = paginate(page + 1, page_size)
+                table = summarize_logs_paginated(
+                    conn=conn, 
+                    faction_filter=sidebar_fields['faction_filter'],
+                    location_filter=sidebar_fields['location_filter'], 
+                    start_datetime=start_datetime, 
+                    end_datetime=end_datetime, 
+                    page_number=page, 
+                    page_size=page_size, 
+                    log_type='Damage',
+                    only_pvp=True
+                )
+                st.table(table)
 
         elif report_option == "Heals":
             st.write("### Heal to Players by Faction")
@@ -626,14 +698,43 @@ def main():
             heal_df = summarize_logs_filtered(conn, sidebar_fields['faction_filter'],
                                               sidebar_fields['location_filter'], start_datetime, end_datetime, 'Heal')
             if not heal_df.empty:
-                heal_table=heal_df
                 heal_df['Time'] = pd.to_datetime(
                     heal_df['Time'])
                 heal_df = heal_df.groupby(['Faction', pd.Grouper(key='Time')])[
                     'Total'].sum().reset_index()
                 st.bar_chart(heal_df, x='Time', y='Total',
                              color='Faction', use_container_width=True)
-                st.table(heal_table)
+                
+                column_page_number, column_page_size, column_page_navigation = st.columns(
+                3)
+                with column_page_number:
+                    page = st.number_input("Page", 1, step=1, value=1)
+                with column_page_size:
+                    page_size = st.number_input("Page Size", 1, step=1, value=20)
+                with column_page_navigation:
+                    prev_page, _ = paginate(page - 1, page_size)
+                    next_page, _ = paginate(page + 1, page_size)
+
+                    st.write('Paginated view of logs navigation:')
+                    column_prev, column_next = st.columns(2)
+                    with column_prev:
+                        if st.button('Prev'):
+                            page, _ = paginate(page - 1, page_size)
+                    with column_next:
+                        if st.button('Next'):
+                            page, _ = paginate(page + 1, page_size)
+                table = summarize_logs_paginated(
+                    conn=conn, 
+                    faction_filter=sidebar_fields['faction_filter'],
+                    location_filter=sidebar_fields['location_filter'], 
+                    start_datetime=start_datetime, 
+                    end_datetime=end_datetime, 
+                    page_number=page, 
+                    page_size=page_size, 
+                    log_type='Heal',
+                    only_pvp=True
+                )
+                st.table(table)
                 
         elif report_option == "Pve damage":
             st.write("### Pve Damage by Faction")
@@ -641,14 +742,43 @@ def main():
             pve_df = summarize_logs_filtered_on_mobs(
                 conn, sidebar_fields['faction_filter'], sidebar_fields['location_filter'], start_datetime, end_datetime, 'Damage')
             if not pve_df.empty:
-                pve_table = pve_df
                 pve_df['Time'] = pd.to_datetime(
                     pve_df['Time'])
                 pve_df = pve_df.groupby(['Faction', pd.Grouper(key='Time')])[
                     'Total'].sum().reset_index()
                 st.bar_chart(pve_df, x='Time', y='Total',
                              color='Faction', use_container_width=True)
-                st.table(pve_table)
+                
+                column_page_number, column_page_size, column_page_navigation = st.columns(
+                3)
+                with column_page_number:
+                    page = st.number_input("Page", 1, step=1, value=1)
+                with column_page_size:
+                    page_size = st.number_input("Page Size", 1, step=1, value=20)
+                with column_page_navigation:
+                    prev_page, _ = paginate(page - 1, page_size)
+                    next_page, _ = paginate(page + 1, page_size)
+
+                    st.write('Paginated view of logs navigation:')
+                    column_prev, column_next = st.columns(2)
+                    with column_prev:
+                        if st.button('Prev'):
+                            page, _ = paginate(page - 1, page_size)
+                    with column_next:
+                        if st.button('Next'):
+                            page, _ = paginate(page + 1, page_size)
+                table = summarize_logs_paginated(
+                    conn=conn, 
+                    faction_filter=sidebar_fields['faction_filter'],
+                    location_filter=sidebar_fields['location_filter'], 
+                    start_datetime=start_datetime, 
+                    end_datetime=end_datetime, 
+                    page_number=page, 
+                    page_size=page_size, 
+                    log_type='Damage',
+                    only_pvp=False
+                )
+                st.table(table)
 
         elif report_option == "Top users by faction":
             st.title("Top users by faction")

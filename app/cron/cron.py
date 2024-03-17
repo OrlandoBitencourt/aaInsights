@@ -257,19 +257,14 @@ def insert_batch_user_data(batch_users):
     """
     conn = connect_to_database()
     cursor = conn.cursor()
-
     try:
-        cursor.executemany("""
-            INSERT INTO users (user_hash, user_name, faction)
-            VALUES (%s, %s, NULL)
-            ON CONFLICT (user_hash) DO NOTHING;
-            """, batch_users)
-        conn.commit()
+        args_str = ','.join(cursor.mogrify("(%s,%s)", x).decode() for x in batch_users)
+        insert_query = " INSERT INTO users (user_hash, user_name) VALUES " + args_str + "  ON CONFLICT (user_hash) DO NOTHING;"
+        cursor.execute(insert_query)
+        conn.commit()  # Commit the transaction after successful insertion
     except Exception as e:
-        conn.rollback()
-        print("Error inserting batch user data:", e)
-    finally:
-        conn.close()
+        print("Error inserting batch log data:", e)
+        conn.rollback()  # Rollback the transaction if an error occurs
 
 @log_function_call
 def insert_batch_log_data(merged_logs):
