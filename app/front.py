@@ -1,12 +1,17 @@
 import hashlib
+import re
 import psycopg2
 from datetime import datetime, timedelta
 from typing import List
 
 import pandas as pd
+import pytz
 import streamlit as st
 from streamlit_option_menu import option_menu
+from io import StringIO
 
+
+DEFAULT_TIMEZONE = 'America/Sao_Paulo'
 
 st.set_page_config(
     page_title='ArcheRage Insights',
@@ -439,13 +444,174 @@ def validate_users_in_factions(conn):
         if faction_info.get('mob') == 0 or faction_info.get('east') == 0 or faction_info.get('west') == 0 or faction_info.get('pirate') == 0:
             error_faction_modal()
 
+def convert_timezone(timestamp, from_tz, to_tz):
+    timestamp = timestamp.replace(tzinfo=None)
+    from_zone = pytz.timezone(from_tz)
+    to_zone = pytz.timezone(to_tz)
+    timestamp = from_zone.localize(timestamp).astimezone(to_zone)
+    return timestamp
+
+def parse_combat(log_file, start_time=None, end_time=None, target_name=None):
+    """
+    Parses combat logs.
+    """
+    combat_logs = []
+    damage_regex = re.compile(r"<(?P<log_time_str>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?P<character>.*?)\|r attacked (?P<receiver>.*?)\|r using \|cff25fcff(.*?)\|r and caused \|cffff0000\-(?P<total>\d+)")
+    heal_regex = re.compile(r"<(?P<log_time_str>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?P<character>.*?)\|r targeted (?P<receiver>[^|]+)\|[^|]+\|cff25fcff(?P<ability>[^|]+)\|[^|]+\|cff00ff00(?P<restored>[^|]+)\|r health.")
+
+    #with open(log_file, "r", encoding="utf8") as file:
+    for line in log_file.splitlines():
+        try:
+            if "attacked" in line:
+                match_damage = damage_regex.search(line)
+                if match_damage:
+                    log_time_str, character, receiver, _, total = match_damage.groups()
+                    log_type = "Damage"
+                    timestamp = datetime.strptime(log_time_str, '%Y-%m-%d %H:%M:%S')
+                    combat_logs.append((log_type, timestamp, character.strip(), receiver.strip(), total.strip()))
+                    continue
+            
+            if "targeted" in line:
+                match_heal = heal_regex.search(line)
+                if match_heal:
+                    log_time_str, character, receiver, _, restored = match_heal.groups()
+                    log_type = "Heal"
+                    timestamp = datetime.strptime(log_time_str, '%Y-%m-%d %H:%M:%S')
+                    combat_logs.append((log_type, timestamp, character.strip(), receiver.strip(), restored.strip()))
+                    continue
+        except UnicodeDecodeError:
+            pass
+    
+    # Filter logs based on start_time, end_time, and target_name
+    if start_time:
+        combat_logs = [log for log in combat_logs if log[1] >= start_time]
+    if end_time:
+        combat_logs = [log for log in combat_logs if log[1] <= end_time]
+    if target_name:
+        combat_logs = [log for log in combat_logs if log[3] == target_name]
+
+    return combat_logs
+
+def parse_location(misc_log_file):
+    """
+    Parses location logs.
+    """
+    location_logs = {}
+    regex_enter = r"<(?P<log_timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})Entering Chat: \d+\.(?P<filter>Shout)\. (?P<log_location>[\w\s]+)"
+    regex_leave = r"<(?P<log_timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})Leaving Chat: \d+\.(?P<filter>Shout)\. (?P<log_location>[\w\s]+)"
+
+    #with open(misc_log_file, "r", encoding='ISO-8859-1') as file:
+    for line in misc_log_file.splitlines():
+        try:
+            if line.startswith('BackupNameAttachment'):
+                continue
+            match_enter = re.match(regex_enter, line)
+            if match_enter:
+                log_timestamp, _, log_location = match_enter.groups()
+                timestamp = datetime.strptime(log_timestamp, '%Y-%m-%d %H:%M:%S')
+                log_location = log_location.strip()  # Remove leading and trailing whitespace
+                if log_location in location_logs:
+                    location_logs[log_location]['enter'] = timestamp
+                else:
+                    location_logs[log_location] = {'enter': timestamp}
+                continue
+            
+            match_leave = re.match(regex_leave, line)
+            if match_leave:
+                log_timestamp, _, log_location = match_leave.groups()
+                timestamp = datetime.strptime(log_timestamp, '%Y-%m-%d %H:%M:%S')
+                log_location = log_location.strip()  # Remove leading and trailing whitespace
+                if log_location in location_logs:
+                    location_logs[log_location]['exit'] = timestamp
+                else:
+                    location_logs[log_location] = {'exit': timestamp}
+        except UnicodeDecodeError:
+            pass
+    return location_logs
+
+def merge_logs(combat_log_file, misc_log_file):
+    """
+    Merges combat and location logs.
+    """
+    location_logs = parse_location(misc_log_file)
+    combat_logs = parse_combat(combat_log_file)
+
+    merged_logs = []
+    for combat_log in combat_logs:
+        log_time = combat_log[1]
+        for location, times in location_logs.items():
+            if is_within_duration(log_time, times.get('enter'), times.get('exit')):
+                merged_logs.append(combat_log + (location,))
+                break
+
+    return merged_logs
+
+
+def insert_batch_user_data(conn, batch_users):
+    cursor = conn.cursor()
+    try:
+        args_str = ','.join(cursor.mogrify("(%s,%s)", x).decode() for x in batch_users)
+        insert_query = "INSERT INTO users (user_hash, user_name) VALUES " + args_str + " ON CONFLICT (user_hash) DO NOTHING;"
+        cursor.execute(insert_query)
+        conn.commit()
+    except psycopg2.Error as e:
+        print("Error inserting batch user data:", e)
+        conn.rollback()
+        
+def is_within_duration(log_time, enter_time, exit_time):
+    """
+    Checks if a log time falls within the duration of entry and exit time for a location.
+    """
+    if enter_time is None or exit_time is None:
+        return False
+    return enter_time <= log_time <= exit_time
+
+def insert_batch_log_data_single(conn, batch_logs):
+    cursor = conn.cursor()
+    try:
+        args_str = ','.join(cursor.mogrify("(%s,%s,%s,%s,%s,%s,%s,%s,%s)", x).decode() for x in batch_logs)
+        insert_query = "INSERT INTO logs (log_type, time, character, receiver, total, location, log_id, character_id, receiver_id) VALUES " + args_str + " ON CONFLICT (log_id) DO NOTHING;"
+        cursor.execute(insert_query)
+        conn.commit()
+    except psycopg2.Error as e:
+        print("Error inserting batch log data:", e)
+        conn.rollback()
+
+def import_logs(combat_log_file, misc_log_file, log_timezone, db_timezone, db_connection):
+    now = datetime.now()
+    st.write(f"> {now.strftime('%Y-%m-%d %H:%M:%S')} : importing logs.")
+    merged_logs = merge_logs(combat_log_file, misc_log_file)
+
+    # Initialize batches for user data and log data
+    batch_users = set()
+    batch_logs = []
+
+    for l in merged_logs:
+        log = list(l)
+        log_time = convert_timezone(log[1], log_timezone, db_timezone)
+        log[1] = str(log_time.strftime('%Y-%m-%d %H:%M:%S'))
+        log_data = (log[0], log[1], log[2], log[3], int(log[4]), log[5], generate_hash(",".join(log)), generate_hash(log[2]), generate_hash(log[3]))
+        batch_logs.append(log_data)
+        batch_users.add((log_data[7], log_data[2]))  # Add user data to the batch_users set
+
+    try:
+        conn = connect_to_database()
+        with conn:
+            insert_batch_user_data(conn, batch_users)
+            insert_batch_log_data_single(conn, batch_logs)
+    except Exception as e:
+        st.error(f"Error importing logs: {e}")
+    else:
+        now = datetime.now()
+        st.write(f"> {now.strftime('%Y-%m-%d %H:%M:%S')} : finished.")
+
 def main():
     conn = connect_to_database()
     create_tables(conn)
     locations = get_locations(conn)
     page = option_menu(
         menu_title="",
-        options=["Main", "Users", "Logs"],
+        options=["Main", "Users", "Logs", "Import"],
         default_index=0,
         orientation='horizontal'
     )
@@ -808,7 +974,24 @@ def main():
                 df_top_pvp = pd.DataFrame(
                     table_data, columns=["User", "Log Count", "Total"])
                 st.table(df_top_pvp)
-        
+    
+    elif page == "Import":
+        st.title("Log File Importer")
+
+        st.write("Upload your Combat.log and Misc.log files below:")
+        combat_log_file = st.file_uploader("Upload Combat.log", type=["log"])
+        misc_log_file = st.file_uploader("Upload Misc.log", type=["log"])
+
+        timezones = pytz.all_timezones
+        log_timezone = st.selectbox("Select the timezone of the logs:", timezones)
+
+        if st.button("Import Logs"):
+            if combat_log_file is not None and misc_log_file is not None:
+                combat_file = StringIO(combat_log_file.getvalue().decode("ISO-8859-1"))
+                misc_file = StringIO(misc_log_file.getvalue().decode("ISO-8859-1"))
+                import_logs(combat_file.read(), misc_file.read(), log_timezone, DEFAULT_TIMEZONE, conn)
+            else:
+                st.write("Please upload both Combat.log and Misc.log files.")
     conn.close()
 
 
