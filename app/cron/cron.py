@@ -369,6 +369,33 @@ def import_users():
     process_log_file()
     now = datetime.now()
     print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: finished importing users.")
+    
+@log_function_call
+def update_mob_users():
+    """
+    Updates the faction column to 'Mob' for users with whitespace in their names and null faction.
+    """
+    conn = connect_to_database()
+    cursor = conn.cursor()
+    try:
+        select_query = "SELECT user_hash FROM users WHERE user_name LIKE '% %' AND faction IS NULL"
+        cursor.execute(select_query)
+        user_hashes = [row[0] for row in cursor.fetchall()]
+
+        if user_hashes:
+            user_hashes_str = ','.join(map(lambda x: f"'{x}'", user_hashes))
+            update_query = f"UPDATE users SET faction = 'Mob' WHERE user_hash IN ({user_hashes_str})"
+            cursor.execute(update_query)
+            conn.commit()
+            print(f"Updated {len(user_hashes)} users with whitespace in their names to faction 'Mob'.")
+        else:
+            print("No users found with whitespace in their names and null faction.")
+    except Exception as e:
+        print("Error updating users:", e)
+        conn.rollback()
+    finally:
+        conn.close()
+
 
 @log_function_call
 def schedule_import():
@@ -377,6 +404,7 @@ def schedule_import():
     """
     schedule.every(interval=30).minutes.do(import_logs) 
     schedule.every().hour.do(import_users) 
+    schedule.every().hour.do(update_mob_users) 
 
     while True:
         schedule.run_pending()
@@ -387,5 +415,6 @@ if __name__ == "__main__":
     print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: log import running.")
     create_database()
     schedule_import()
+    #update_mob_users()
     #import_users()
     #import_logs()
