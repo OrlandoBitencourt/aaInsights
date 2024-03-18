@@ -309,21 +309,83 @@ def insert_batch_log_data_single(conn, batch):
     except Exception as e:
         print("Error inserting batch log data:", e)
         conn.rollback()  # Rollback the transaction if an error occurs
+    
+        
+def process_log_file():
+    pattern = re.compile(r'<\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(.*?) has killed (.*?), totaling \d+ kill\(s\)!')
+    conn = connect_to_database()
+    users = dict(
+        Pirate = [],
+        East = [],
+        West = []
+    )
+    nation_to_faction = dict(Nuia='West', Haranya='East', Pirate='Pirate')
+    with open(MISC_LOG, 'r', encoding='ISO-8859-1') as file:
+        for line in file:
+            match = pattern.search(line)
+            if match:
+                faction1 = nation_to_faction[match.group(1).split(' ')[0].strip()]
+                player1 = match.group(1).split(' ')[1].strip()
+                faction2 = nation_to_faction[match.group(2).split(' ')[0].strip()]
+                player2 = match.group(2).split(' ')[1].strip()
+                user_hash1 = generate_hash(player1)
+                user_hash2 = generate_hash(player2)
+                
+                users[faction1].append((user_hash1))
+                users[faction2].append((user_hash2))
+                
+    for faction, hashes in users.items():
+        batch = []
+        for item in hashes:
+            batch.append(item)
+            if len(batch) >= 100:
+                execute_batch_update(conn, batch, faction)
+                batch = []
+        if len(batch) > 0:
+            execute_batch_update(conn, batch, faction)
+            batch = []
+                
+    conn.close()
+
+def execute_batch_update(conn, user_hashes, faction):
+    try:
+        cursor = conn.cursor()
+        user_hashes_str = ','.join(map(lambda x: f"'{x}'", user_hashes))
+        update_query = f"UPDATE users SET faction = '{faction}' WHERE user_hash IN ({user_hashes_str})"
+        cursor.execute(update_query)
+        conn.commit()
+    except Exception as e:
+        print(f"Error updating users for faction '{faction}':", e)
+        conn.rollback()
+
+
+@log_function_call
+def import_users():
+    """
+    Imports user data into the database at regular intervals.
+    """
+    now = datetime.now()
+    print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: importing users.")
+    process_log_file()
+    now = datetime.now()
+    print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: finished importing users.")
 
 @log_function_call
 def schedule_import():
     """
-    Schedules the import of logs at regular intervals.
+    Schedules the import of logs and users at regular intervals.
     """
     schedule.every().hour.do(import_logs) 
+    schedule.every().hour.do(import_users) 
 
     while True:
         schedule.run_pending()
         time.sleep(60)
-
+        
 if __name__ == "__main__":
     now = datetime.now()
     print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: log import running.")
     create_database()
     schedule_import()
+    #import_users()
     #import_logs()
