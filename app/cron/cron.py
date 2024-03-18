@@ -375,7 +375,7 @@ def schedule_import():
     """
     Schedules the import of logs and users at regular intervals.
     """
-    schedule.every().hour.do(import_logs) 
+    schedule.every(interval=30).minutes.do(import_logs) 
     schedule.every().hour.do(import_users) 
 
     while True:
