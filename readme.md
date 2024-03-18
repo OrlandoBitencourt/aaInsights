@@ -51,6 +51,7 @@ The AA Insights provides the following functionalities:
 - **Overview**: Provides an overview of the database, including total users and logs.
 - **Users**: Allows users to view user data, faction distribution, user logs by location, and attendance.
 - **Logs**: Offers various log analysis options, including an overview of logs, PvP damage, heals, and PvE damage.
+- **Import**: Allows users to import manually log files, converting the files to database default timezone.
 
 
 ## License
