@@ -20,6 +20,7 @@ Before running the project, ensure you have the following dependencies installed
 - Pandas
 - psycopg2-binary
 - streamlit_option_menu
+- schedule (cron)
 
 You can install the required dependencies using pip:
 
