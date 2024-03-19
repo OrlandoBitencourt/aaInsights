@@ -357,7 +357,7 @@ def execute_batch_update(conn, user_hashes, faction):
     except Exception as e:
         print(f"Error updating users for faction '{faction}':", e)
         conn.rollback()
-
+9
 
 @log_function_call
 def import_users():
@@ -406,6 +406,7 @@ def schedule_import():
     schedule.every().hour.do(import_users) 
     schedule.every().hour.do(update_mob_users) 
 
+    schedule.run_all(delay_seconds=360)
     while True:
         schedule.run_pending()
         time.sleep(60)
