@@ -53,6 +53,7 @@ The AA Insights provides the following functionalities:
 - **Logs**: Offers various log analysis options, including an overview of logs, PvP damage, heals, and PvE damage.
 - **Import**: Allows users to import manually log files, converting the files to database default timezone.
 
+The cron import and update data in the database, theres a job that import logs and users, one job to convert data from halcy fights to set user factions based on halcy activity and another job to set mob faction based on the user_name, most of the mobs have ' ' a empty space character in name.
 
 ## License
 
