@@ -321,14 +321,15 @@ def query_users_by_faction(conn, faction_filter, location_filter, start_datetime
     return cursor.fetchall()
 
 
-def create_report_filter_sidebar(locations: List[str]):
+def create_report_filter_sidebar(locations: List[str], faction=True):
     filter_sidebar = st.sidebar
     filter_sidebar.title("Report filters")
     sidebar_fields = {}
     sidebar_fields['location_filter'] = filter_sidebar.multiselect(
         "Select Location", [""] + locations, [])
-    sidebar_fields['faction_filter'] = filter_sidebar.multiselect(
-        "Select Faction", ["East", "West", "Pirate", "*"], "*")
+    if faction:
+        sidebar_fields['faction_filter'] = filter_sidebar.multiselect(
+            "Select Faction", ["East", "West", "Pirate", "*"], "*")
     sidebar_fields['start_date'] = filter_sidebar.date_input(
         "Start Date", get_default_start_time())
     sidebar_fields['start_time'] = filter_sidebar.time_input("Start Time", step=300, value=get_default_start_time())
@@ -667,7 +668,7 @@ def main():
                 df1 = df_user['Faction'].value_counts()
                 st.bar_chart(data=df1)
         elif report_option == 'User logs by location':
-            _, sidebar_fields = create_report_filter_sidebar(locations)
+            _, sidebar_fields = create_report_filter_sidebar(locations, faction=False)
             start_datetime = None if not sidebar_fields[
                 'start_date'] else f"{sidebar_fields['start_date']} {sidebar_fields['start_time']}"
             end_datetime = None if not sidebar_fields[
@@ -675,14 +676,6 @@ def main():
 
             cursor = conn.cursor()
             filters = []
-            if '*' in sidebar_fields['faction_filter']:
-                factions = ["East", "West", "Pirate"]
-                filters.append(f"faction IN {tuple(factions)}") 
-            elif len(sidebar_fields['faction_filter']) > 1:
-                filters.append(f"faction IN {tuple(sidebar_fields['faction_filter'])}")
-            else:
-                filters.append(f"faction = '{sidebar_fields['faction_filter'][0]}'")
-            
             if len(sidebar_fields['location_filter']) > 0:
                 for location in sidebar_fields['location_filter']:
                     if location:
@@ -691,7 +684,7 @@ def main():
                 filters.append(f"logs.time >= '{start_datetime}'")
             if end_datetime:
                 filters.append(f"logs.time <= '{end_datetime}'")
-            filters.append("faction <> 'Mob'")
+            filters.append("users.user_name <> ''")
             if filters:
                 query = """
                     SELECT DISTINCT users.user_name, users.faction, logs.location
@@ -702,6 +695,7 @@ def main():
                 user_logs = cursor.fetchall()
                 user_logs_df = pd.DataFrame(
                     user_logs, columns=["User Name", "Faction", "Location"])
+                user_logs_df['Faction'] = user_logs_df['Faction'].fillna('Empty')
 
                 df_count_by_faction = user_logs_df['Faction'].value_counts()
                 with st.container():
@@ -710,7 +704,7 @@ def main():
                     for faction, count in df_count_by_faction.items():
                         total_users_by_faction[faction] = count
 
-                    east, west, pirate = st.columns(3)
+                    east, west, pirate, empty = st.columns(4)
                     with east:
                         st.subheader("East")
                         st.metric(label="Total", value=str(
@@ -723,10 +717,15 @@ def main():
                         st.subheader("Pirate")
                         st.metric(label="Total", value=str(
                             total_users_by_faction.get("Pirate")))
+                    with empty:
+                        st.subheader("Empty")
+                        st.metric(label="Total", value=str(
+                            total_users_by_faction.get("Empty")))
 
                     st.subheader("User Logs by Location and Faction")
                     with st.container():
                         if not user_logs_df.empty:
+                            user_logs_df = user_logs_df[user_logs_df['Faction'] != 'Mob']
                             st.table(user_logs_df)
                         else:
                             st.write(
@@ -982,8 +981,8 @@ def main():
         combat_log_file = st.file_uploader("Upload Combat.log", type=["log"])
         misc_log_file = st.file_uploader("Upload Misc.log", type=["log"])
 
-        timezones = pytz.all_timezones
-        log_timezone = st.selectbox("Select the timezone of the logs:", timezones)
+        timezones = [DEFAULT_TIMEZONE] + pytz.all_timezones
+        log_timezone = st.selectbox("Select the timezone of the logs:", timezones, index=0)
 
         if st.button("Import Logs"):
             if combat_log_file is not None and misc_log_file is not None:
