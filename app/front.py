@@ -612,8 +612,8 @@ def main():
 			<style>
 			@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@100&display=swap');
 
-			html, body, [class*="css"]  {
-			font-family: 'Roboto', sans-serif;
+			html, body *, [class*="css"]  {
+			font-family: 'Roboto', sans-serif !important;
 			}
 			</style>
 			"""
