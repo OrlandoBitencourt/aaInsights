@@ -31,7 +31,7 @@ def connect_to_database():
         dbname="user_logs",
         user="adm",
         password="supersecret",
-        host="db",
+        host="localhost",
         port="5432"
     )
 
@@ -331,9 +331,10 @@ def create_report_filter_sidebar(locations: List[str], faction=True):
     if faction:
         sidebar_fields['faction_filter'] = filter_sidebar.multiselect(
             "Select Faction", ["East", "West", "Pirate", "*"], "*")
+    time_data = get_default_start_time()
     sidebar_fields['start_date'] = filter_sidebar.date_input(
-        "Start Date", get_default_start_time())
-    sidebar_fields['start_time'] = filter_sidebar.time_input("Start Time", step=300, value=get_default_start_time())
+        "Start Date", time_data.date())
+    sidebar_fields['start_time'] = filter_sidebar.time_input("Start Time", step=300, value=time_data.time())
     sidebar_fields['end_date'] = filter_sidebar.date_input("End Date")
     sidebar_fields['end_time'] = filter_sidebar.time_input("End Time", step=300)
     return filter_sidebar, sidebar_fields
@@ -700,7 +701,7 @@ def main():
 
                 df_count_by_faction = user_logs_df['Faction'].value_counts()
                 with st.container():
-                    total_users_by_faction = dict(East=0, West=0, Pirate=0)
+                    total_users_by_faction = dict(East=0, West=0, Pirate=0, Empty=0)
 
                     for faction, count in df_count_by_faction.items():
                         total_users_by_faction[faction] = count
