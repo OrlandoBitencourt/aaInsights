@@ -13,6 +13,7 @@ from io import StringIO
 
 DEFAULT_TIMEZONE = 'America/Sao_Paulo'
 
+
 st.set_page_config(
     page_title='ArcheRage Insights',
     page_icon='logo.ico',
@@ -607,6 +608,16 @@ def import_logs(combat_log_file, misc_log_file, log_timezone, db_timezone, db_co
         st.write(f"> {now.strftime('%Y-%m-%d %H:%M:%S')} : finished.")
 
 def main():
+    streamlit_style = """
+			<style>
+			@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@100&display=swap');
+
+			html, body, [class*="css"]  {
+			font-family: 'Roboto', sans-serif;
+			}
+			</style>
+			"""
+    st.markdown(streamlit_style, unsafe_allow_html=True)
     conn = connect_to_database()
     create_tables(conn)
     locations = get_locations(conn)
