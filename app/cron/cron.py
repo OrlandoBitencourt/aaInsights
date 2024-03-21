@@ -14,7 +14,7 @@ def log_function_call(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         now = datetime.now()
-        print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: {func.__name__}.")
+        print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: {func.__name__}.", flush=True)
         return func(*args, **kwargs)
     return wrapper
 
@@ -217,37 +217,25 @@ def import_logs():
     """
     Imports log data into the database in batches.
     """
-    now = datetime.now()
-    print("> ", now.strftime("%Y-%m-%d %H:%M:%S"), ": importing logs.")
     merged_logs = merge_logs()
-
-    batch_size = 1000  # Adjust batch size as needed
     batch_logs = []
     batch_users = set()
-
     for l in merged_logs:
         log = list(l)
         log[1] = str(log[1].strftime('%Y-%m-%d %H:%M:%S'))
         log_hash = generate_hash(",".join(log))
-
-        # Skip duplicate log entries
         if log_hash in batch_logs:
             continue
         else:
             batch_logs.append(log_hash)
-
         log_data = (log[0], log[1], log[2], log[3], int(log[4]), log[5], log_hash, generate_hash(log[2]), generate_hash(log[3]))
-        batch_users.add((log_data[7], log[2]))  # Collect user data for batch insertion
+        batch_users.add((log_data[7], log[2]))
         batch_users.add((log_data[8], log[3]))
 
-    # Insert user data in batches
     insert_batch_user_data(batch_users)
-
-    # Insert log data in batches
     insert_batch_log_data(merged_logs)
-
     now = datetime.now()
-    print("> ", now.strftime("%Y-%m-%d %H:%M:%S"), ": finished.")
+    print("> ", now.strftime("%Y-%m-%d %H:%M:%S"), ": finished.", flush=True)
 
 @log_function_call
 def insert_batch_user_data(batch_users):
@@ -260,10 +248,10 @@ def insert_batch_user_data(batch_users):
         args_str = ','.join(cursor.mogrify("(%s,%s)", x).decode() for x in batch_users)
         insert_query = " INSERT INTO users (user_hash, user_name) VALUES " + args_str + "  ON CONFLICT (user_hash) DO NOTHING;"
         cursor.execute(insert_query)
-        conn.commit()  # Commit the transaction after successful insertion
+        conn.commit()
     except Exception as e:
-        print("Error inserting batch log data:", e)
-        conn.rollback()  # Rollback the transaction if an error occurs
+        print("Error inserting batch log data:", e, flush=True)
+        conn.rollback()
 
 @log_function_call
 def insert_batch_log_data(merged_logs):
@@ -271,27 +259,19 @@ def insert_batch_log_data(merged_logs):
     Inserts batch log data into the database using prepared statements.
     """
     conn = connect_to_database()
-    cursor = conn.cursor()
-
-    batch_size = 1000  # Adjust batch size as needed
+    batch_size = 1000
     batch = []
-
     for l in merged_logs:
         log = list(l)
         log[1] = str(log[1].strftime('%Y-%m-%d %H:%M:%S'))
         log_hash = generate_hash(",".join(log))
         log_data = (log[0], log[1], log[2], log[3], int(log[4]), log[5], log_hash, generate_hash(log[2]), generate_hash(log[3]))
         batch.append(log_data)
-
-        # Insert batch into the database when it reaches the batch size
         if len(batch) >= batch_size:
             insert_batch_log_data_single(conn, batch)
             batch = []
-
-    # Insert any remaining entries in the batch
     if batch:
         insert_batch_log_data_single(conn, batch)
-
     conn.close()
 
 @log_function_call
@@ -304,10 +284,10 @@ def insert_batch_log_data_single(conn, batch):
         args_str = ','.join(cursor.mogrify("(%s,%s,%s,%s,%s,%s,%s,%s,%s)", x).decode() for x in batch)
         insert_query = "INSERT INTO logs (log_type, time, character, receiver, total, location, log_id, character_id, receiver_id) VALUES " + args_str + " ON CONFLICT (log_id) DO NOTHING;"
         cursor.execute(insert_query)
-        conn.commit()  # Commit the transaction after successful insertion
+        conn.commit()
     except Exception as e:
-        print("Error inserting batch log data:", e)
-        conn.rollback()  # Rollback the transaction if an error occurs
+        print("Error inserting batch log data:", e, flush=True)
+        conn.rollback()
     
         
 def process_log_file():
@@ -329,10 +309,8 @@ def process_log_file():
                 player2 = match.group(2).split(' ')[1].strip()
                 user_hash1 = generate_hash(player1)
                 user_hash2 = generate_hash(player2)
-                
                 users[faction1].append((user_hash1))
                 users[faction2].append((user_hash2))
-                
     for faction, hashes in users.items():
         batch = []
         for item in hashes:
@@ -343,8 +321,8 @@ def process_log_file():
         if len(batch) > 0:
             execute_batch_update(conn, batch, faction)
             batch = []
-                
     conn.close()
+
 
 def execute_batch_update(conn, user_hashes, faction):
     try:
@@ -354,20 +332,18 @@ def execute_batch_update(conn, user_hashes, faction):
         cursor.execute(update_query)
         conn.commit()
     except Exception as e:
-        print(f"Error updating users for faction '{faction}':", e)
+        print(f"Error updating users for faction '{faction}':", e, flush=True)
         conn.rollback()
-9
+
 
 @log_function_call
 def import_users():
     """
     Imports user data into the database at regular intervals.
     """
-    now = datetime.now()
-    print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: importing users.")
     process_log_file()
     now = datetime.now()
-    print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: finished importing users.")
+    print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: finished importing users.", flush=True)
     
 @log_function_call
 def update_mob_users():
@@ -377,29 +353,22 @@ def update_mob_users():
     conn = connect_to_database()
     cursor = conn.cursor()
     try:
-        # Select users with null faction and entirely uppercase names
         select_uppercase_query = "SELECT user_hash FROM users WHERE faction IS NULL AND user_name ~ '^[A-Z\s]+$'"
         cursor.execute(select_uppercase_query)
         uppercase_users = [row[0] for row in cursor.fetchall()]
-
-        # Select users with null faction and whitespace in their names
         select_whitespace_query = "SELECT user_hash FROM users WHERE faction IS NULL AND user_name LIKE '% %'"
         cursor.execute(select_whitespace_query)
         whitespace_users = [row[0] for row in cursor.fetchall()]
-
-        # Merge the lists of users to update
         users_to_update = set(uppercase_users + whitespace_users)
-
         users_updated = 0
         for user_hash in users_to_update:
             update_query = "UPDATE users SET faction = 'Mob' WHERE user_hash = %s"
             cursor.execute(update_query, (user_hash,))
             users_updated += 1
-
         conn.commit()
-        print(f"Updated {users_updated} users with entirely uppercase names or whitespace in their names to faction 'Mob'.")
+        print(f"Updated {users_updated} users with entirely uppercase names or whitespace in their names to faction 'Mob'.", flush=True)
     except Exception as e:
-        print("Error updating users:", e)
+        print("Error updating users:", e, flush=True)
         conn.rollback()
     finally:
         conn.close()
@@ -413,15 +382,15 @@ def schedule_import():
     schedule.every(interval=30).minutes.do(import_logs) 
     schedule.every().hour.do(import_users) 
     schedule.every().hour.do(update_mob_users) 
-
     schedule.run_all(delay_seconds=360)
     while True:
         schedule.run_pending()
         time.sleep(60)
         
+        
 if __name__ == "__main__":
     now = datetime.now()
-    print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: log import running.")
+    print(f"> {now.strftime('%Y-%m-%d %H:%M:%S')}: log import running.", flush=True)
     create_database()
     schedule_import()
     #update_mob_users()
