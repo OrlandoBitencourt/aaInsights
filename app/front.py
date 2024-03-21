@@ -31,7 +31,7 @@ def connect_to_database():
         dbname="user_logs",
         user="adm",
         password="supersecret",
-        host="localhost",
+        host="db",
         port="5432"
     )
 
@@ -331,10 +331,9 @@ def create_report_filter_sidebar(locations: List[str], faction=True):
     if faction:
         sidebar_fields['faction_filter'] = filter_sidebar.multiselect(
             "Select Faction", ["East", "West", "Pirate", "*"], "*")
-    time_data = get_default_start_time()
     sidebar_fields['start_date'] = filter_sidebar.date_input(
-        "Start Date", time_data.date())
-    sidebar_fields['start_time'] = filter_sidebar.time_input("Start Time", step=300, value=time_data.time())
+        "Start Date")
+    sidebar_fields['start_time'] = filter_sidebar.time_input("Start Time", step=300)
     sidebar_fields['end_date'] = filter_sidebar.date_input("End Date")
     sidebar_fields['end_time'] = filter_sidebar.time_input("End Time", step=300)
     return filter_sidebar, sidebar_fields
