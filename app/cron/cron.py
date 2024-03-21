@@ -18,7 +18,6 @@ def log_function_call(func):
         return func(*args, **kwargs)
     return wrapper
 
-@log_function_call
 def connect_to_database():
     """
     Connects to the PostgreSQL database.
@@ -378,18 +377,27 @@ def update_mob_users():
     conn = connect_to_database()
     cursor = conn.cursor()
     try:
-        select_query = "SELECT user_hash FROM users WHERE user_name LIKE '% %' AND faction IS NULL"
-        cursor.execute(select_query)
-        user_hashes = [row[0] for row in cursor.fetchall()]
+        # Select users with null faction and entirely uppercase names
+        select_uppercase_query = "SELECT user_hash FROM users WHERE faction IS NULL AND user_name ~ '^[A-Z\s]+$'"
+        cursor.execute(select_uppercase_query)
+        uppercase_users = [row[0] for row in cursor.fetchall()]
 
-        if user_hashes:
-            user_hashes_str = ','.join(map(lambda x: f"'{x}'", user_hashes))
-            update_query = f"UPDATE users SET faction = 'Mob' WHERE user_hash IN ({user_hashes_str})"
-            cursor.execute(update_query)
-            conn.commit()
-            print(f"Updated {len(user_hashes)} users with whitespace in their names to faction 'Mob'.")
-        else:
-            print("No users found with whitespace in their names and null faction.")
+        # Select users with null faction and whitespace in their names
+        select_whitespace_query = "SELECT user_hash FROM users WHERE faction IS NULL AND user_name LIKE '% %'"
+        cursor.execute(select_whitespace_query)
+        whitespace_users = [row[0] for row in cursor.fetchall()]
+
+        # Merge the lists of users to update
+        users_to_update = set(uppercase_users + whitespace_users)
+
+        users_updated = 0
+        for user_hash in users_to_update:
+            update_query = "UPDATE users SET faction = 'Mob' WHERE user_hash = %s"
+            cursor.execute(update_query, (user_hash,))
+            users_updated += 1
+
+        conn.commit()
+        print(f"Updated {users_updated} users with entirely uppercase names or whitespace in their names to faction 'Mob'.")
     except Exception as e:
         print("Error updating users:", e)
         conn.rollback()
