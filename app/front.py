@@ -613,26 +613,36 @@ def main():
     locations = get_locations(conn)
     page = option_menu(
         menu_title="",
-        options=["Main", "Users", "Logs", "Import"],
+        options=["🛸 Main", "🐒 Users", "📑 Logs", "💾 Import"],
         default_index=0,
         orientation='horizontal'
     )
 
-    if page == "Main":
+    if page == "🛸 Main":
         validate_users_in_factions(conn)
         
         with st.container():
-            left_co, cent_co,last_co = st.columns(3)
+            left_co, cent_co, last_co = st.columns(3)
             with left_co:
-                st.image("logo.png", width=300)
+                st.image("logo300x300_test.png", width=250, caption="ArcheRage Insights")
+                _left_co, _cent_co, _last_co = st.columns(3)
+                with _left_co:
+                    st.image("barcode_logo.png", width=80, caption="Barcode™️")
+                with _cent_co:
+                    st.image("united_east_logo.png", width=80, caption="United East™️")
             with cent_co:
                 total_users, total_logs = get_total_counts(conn)
 
-                st.write("### Your current database overview")
-                st.write(f"##### - Total users: {total_users}.")
-                st.write(f"##### - Total logs: {total_logs}.")
+                st.markdown("<h1 style='text-align: center;'>Database overview</h1>", unsafe_allow_html=True)
+                overview_table = {
+                    'Total': {
+                        '🐒 Users': f'{format_number(total_users)}',
+                        '📑 Logs': f'{format_number(total_logs)}'
+                    }
+                }
+                st.table(overview_table)
 
-    elif page == "Users":
+    elif page == "🐒 Users":
         report_option = st.selectbox('Select a report', ['User table', 'Faction distribution', 'User logs by location',
                                      'Attendence'], index=0, placeholder="Choose an option", disabled=False, label_visibility="visible")
         if report_option == 'User table':
@@ -760,7 +770,7 @@ def main():
             st.subheader('Body count by faction')
             st.bar_chart(plot_data, use_container_width=True)
 
-    elif page == "Logs":
+    elif page == "📑 Logs":
         _, sidebar_fields = create_report_filter_sidebar(locations)
         start_datetime = None if not sidebar_fields[
             'start_date'] else f"{sidebar_fields['start_date']} {sidebar_fields['start_time']}"
@@ -975,7 +985,7 @@ def main():
                     table_data, columns=["User", "Log Count", "Total"])
                 st.table(df_top_pvp)
     
-    elif page == "Import":
+    elif page == "💾 Import":
         st.title("Log File Importer")
 
         st.write("Upload your Combat.log and Misc.log files below:")
@@ -992,6 +1002,7 @@ def main():
                 import_logs(combat_file.read(), misc_file.read(), log_timezone, DEFAULT_TIMEZONE, conn)
             else:
                 st.write("Please upload both Combat.log and Misc.log files.")
+    
     conn.close()
 
 
