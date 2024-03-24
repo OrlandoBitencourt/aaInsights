@@ -612,6 +612,9 @@ def calculate_user_faction_percentage(faction_counts):
     faction_percentages = {}
     
     for faction, count in faction_counts.items():
+        if total_users == 0:
+            faction_percentages[faction] = 0
+            continue
         percentage = (count / total_users) * 100
         faction_percentages[faction] = percentage
     
