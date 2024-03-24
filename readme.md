@@ -60,3 +60,15 @@ The cron import and update data in the database, theres a job that import logs a
 
 © 2024 Developed by Xizde. All rights reserved.
 
+## SHOUT OUT TO
+<div class="row">
+    <div class="col text-center">
+        <img src="app/barcode_logo.png" alt="Barcode Guild" width="80">
+        <br>Barcode Guild
+    </div>
+    <div class="col text-center">
+        <img src="app/united_east_logo.png" alt="United East" width="80">
+        <br>United East
+    </div>
+</div>
+
