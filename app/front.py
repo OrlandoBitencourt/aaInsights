@@ -8,6 +8,8 @@ import pandas as pd
 import pytz
 import streamlit as st
 from streamlit_option_menu import option_menu
+from streamlit_extras.metric_cards import style_metric_card
+from streamlit_extras.dataframe_explorer import dataframe_explorer
 from io import StringIO
 
 
@@ -654,7 +656,6 @@ def main():
                     }
                 }
                 st.table(overview_table)
-
     elif page == "🐒 Users":
         report_option = st.selectbox('Select a report', ['User table', 'Faction distribution', 'User logs by location',
                                      'Body count'], index=0, placeholder="Choose an option", disabled=False, label_visibility="visible")
@@ -728,6 +729,7 @@ def main():
 
                 df_count_by_faction = user_logs_df['Faction'].value_counts()
                 with st.container():
+                    st.subheader("Distribuition")
                     total_users_by_faction = dict(East=0, West=0, Pirate=0, Empty=0)
 
                     for faction, count in df_count_by_faction.items():
@@ -737,38 +739,36 @@ def main():
 
                     east, west, pirate, empty = st.columns(4)
                     with east:
-                        st.subheader("East")
                         st.metric(
-                            label="Total", 
+                            label="East", 
                             value=str(total_users_by_faction.get("East")), 
                             delta=f'{round(faction_percentages.get("East"), 2)}%',
                             delta_color='off',
                         )
                     with west:
-                        st.subheader("West")
                         st.metric(
-                            label="Total", 
+                            label="West", 
                             value=str(total_users_by_faction.get("West")), 
                             delta=f'{round(faction_percentages.get("West"), 2)}%',
                             delta_color='off',
                         )
                     with pirate:
-                        st.subheader("Pirate")
                         st.metric(
-                            label="Total", value=str(total_users_by_faction.get("Pirate")), 
+                            label="Pirate", value=str(total_users_by_faction.get("Pirate")), 
                             delta=f'{round(faction_percentages.get("Pirate"), 2)}%',
                             delta_color='off',
                         )
                     with empty:
-                        st.subheader("Empty")
                         st.metric(
-                            label="Total", 
+                            label="Empty", 
                             value=str(total_users_by_faction.get("Empty")), 
                             delta=f'{round(faction_percentages.get("Empty"), 2)}%',
                             delta_color='off',
                         )
+                        
+                    style_metric_cards(background_color='#262730', border_color='#FF4B4B', border_left_color='#FF4B4B')
 
-                    st.subheader("User Logs by Location and Faction")
+                    st.subheader("Logs by location")
                     with st.container():
                         if not user_logs_df.empty:
                             user_logs_df = user_logs_df[user_logs_df['Faction'] != 'Mob']
@@ -813,7 +813,7 @@ def main():
             'end_date'] else f"{sidebar_fields['end_date']} {sidebar_fields['end_time']}"
 
         report_option = st.selectbox('Select a report', ['Overview', 'Pvp damage', 'Heals', 'Pve damage',
-                                     'Top users by faction'], index=0, placeholder="Choose an option", disabled=False)
+                                     'Top users by faction', 'Explorer'], index=0, placeholder="Choose an option", disabled=False)
         if report_option == 'Overview':
             logs_summary = summarize_logs(
                 conn, 
@@ -1019,7 +1019,17 @@ def main():
                 df_top_pvp = pd.DataFrame(
                     table_data, columns=["User", "Log Count", "Total"])
                 st.table(df_top_pvp)
-    
+
+        elif report_option == "Explorer":
+            dmg_df = summarize_logs_filtered(conn, sidebar_fields['faction_filter'],
+                                             sidebar_fields['location_filter'], start_datetime, end_datetime, 'Damage')
+            heal_df = summarize_logs_filtered(conn, sidebar_fields['faction_filter'],
+                                             sidebar_fields['location_filter'], start_datetime, end_datetime, 'Heal')
+            frames = [dmg_df, heal_df]
+            df_merged = pd.concat(frames)
+            if not df_merged.empty:
+                filtered_df = dataframe_explorer(df_merged, case=False)
+                st.dataframe(filtered_df, use_container_width=True)
     elif page == "💾 Import":
         st.title("Log File Importer")
 
