@@ -606,6 +606,16 @@ def import_logs(combat_log_file, misc_log_file, log_timezone, db_timezone, db_co
     else:
         now = datetime.now()
         st.write(f"> {now.strftime('%Y-%m-%d %H:%M:%S')} : finished.")
+        
+def calculate_user_faction_percentage(faction_counts):
+    total_users = sum(faction_counts.values())
+    faction_percentages = {}
+    
+    for faction, count in faction_counts.items():
+        percentage = (count / total_users) * 100
+        faction_percentages[faction] = percentage
+    
+    return faction_percentages
 
 def main():
     conn = connect_to_database()
@@ -644,7 +654,7 @@ def main():
 
     elif page == "🐒 Users":
         report_option = st.selectbox('Select a report', ['User table', 'Faction distribution', 'User logs by location',
-                                     'Attendence'], index=0, placeholder="Choose an option", disabled=False, label_visibility="visible")
+                                     'Body count'], index=0, placeholder="Choose an option", disabled=False, label_visibility="visible")
         if report_option == 'User table':
             st.sidebar.header("Save User Faction")
             user_name = st.sidebar.text_input("Enter User Name")
@@ -656,8 +666,13 @@ def main():
                     save_user_faction(conn, user_name.rstrip(), faction)
                     st.sidebar.success("Faction saved successfully!")
             
+            df_user = get_users(conn)
             with st.container():
-                st.subheader("User data")
+                df_user['Faction'] = df_user['Faction'].fillna('Empty')
+                df1 = df_user['Faction'].value_counts().rename_axis('Faction').reset_index(name='Total')
+                st.table(data=df1)
+            
+            with st.container():
                 col_faction, col_user = st.columns(2)
                 with col_faction:
                     faction_filter = st.multiselect(
@@ -675,7 +690,7 @@ def main():
                 st.write("### User Faction Distribution")
                 total_users = len(df_user['User Hash'])
                 st.write(f"##### Total unique users: {total_users}.")
-
+                df_user['Faction'] = df_user['Faction'].fillna('Empty')
                 df1 = df_user['Faction'].value_counts()
                 st.bar_chart(data=df1)
         elif report_option == 'User logs by location':
@@ -714,24 +729,41 @@ def main():
 
                     for faction, count in df_count_by_faction.items():
                         total_users_by_faction[faction] = count
+                    
+                    faction_percentages = calculate_user_faction_percentage(total_users_by_faction)
 
                     east, west, pirate, empty = st.columns(4)
                     with east:
                         st.subheader("East")
-                        st.metric(label="Total", value=str(
-                            total_users_by_faction.get("East")))
+                        st.metric(
+                            label="Total", 
+                            value=str(total_users_by_faction.get("East")), 
+                            delta=f'{round(faction_percentages.get("East"), 2)}%',
+                            delta_color='off',
+                        )
                     with west:
                         st.subheader("West")
-                        st.metric(label="Total", value=str(
-                            total_users_by_faction.get("West")))
+                        st.metric(
+                            label="Total", 
+                            value=str(total_users_by_faction.get("West")), 
+                            delta=f'{round(faction_percentages.get("West"), 2)}%',
+                            delta_color='off',
+                        )
                     with pirate:
                         st.subheader("Pirate")
-                        st.metric(label="Total", value=str(
-                            total_users_by_faction.get("Pirate")))
+                        st.metric(
+                            label="Total", value=str(total_users_by_faction.get("Pirate")), 
+                            delta=f'{round(faction_percentages.get("Pirate"), 2)}%',
+                            delta_color='off',
+                        )
                     with empty:
                         st.subheader("Empty")
-                        st.metric(label="Total", value=str(
-                            total_users_by_faction.get("Empty")))
+                        st.metric(
+                            label="Total", 
+                            value=str(total_users_by_faction.get("Empty")), 
+                            delta=f'{round(faction_percentages.get("Empty"), 2)}%',
+                            delta_color='off',
+                        )
 
                     st.subheader("User Logs by Location and Faction")
                     with st.container():
@@ -741,7 +773,7 @@ def main():
                         else:
                             st.write(
                                 "No data available for the selected filters.")
-        elif report_option == 'Attendence':
+        elif report_option == 'Body count':
             _, sidebar_fields = create_report_filter_sidebar(locations)
             start_datetime = None if not sidebar_fields[
                 'start_date'] else f"{sidebar_fields['start_date']} {sidebar_fields['start_time']}"
