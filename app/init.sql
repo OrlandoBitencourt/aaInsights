@@ -31,6 +31,13 @@ CREATE TABLE IF NOT EXISTS logs (
     receiver_id TEXT
 );
 
+CREATE TABLE IF NOT EXISTS location_logs (
+    location_hash TEXT PRIMARY KEY,
+    location TEXT,
+    enter TEXT,
+    exit TEXT
+);
+
 -- Create indexes
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_hash ON users (user_hash);
 CREATE INDEX IF NOT EXISTS idx_logs_character_id ON logs (character_id);
