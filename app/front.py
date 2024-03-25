@@ -11,6 +11,8 @@ from streamlit_option_menu import option_menu
 from streamlit_extras.metric_cards import style_metric_cards
 from streamlit_extras.dataframe_explorer import dataframe_explorer
 from io import StringIO
+import plotly.figure_factory as ff
+import plotly.colors
 
 
 DEFAULT_TIMEZONE = 'America/Sao_Paulo'
@@ -54,6 +56,12 @@ def create_tables(conn):
                         log_id TEXT PRIMARY KEY,
                         character_id TEXT,
                         receiver_id TEXT)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS location_logs (
+                    location_hash TEXT PRIMARY KEY,
+                    location TEXT,
+                    enter TEXT,
+                    exit TEXT
+                )''')
     conn.commit()
 
 
@@ -622,6 +630,13 @@ def calculate_user_faction_percentage(faction_counts):
     
     return faction_percentages
 
+
+def calculate_continuous_presence(group):
+    start_time = group['time'].iloc[0]
+    end_time = group['time'].iloc[-1]
+    return pd.Series({'start_time': start_time, 'end_time': end_time})
+
+
 def main():
     conn = connect_to_database()
     create_tables(conn)
@@ -658,7 +673,7 @@ def main():
                 st.table(overview_table)
     elif page == "🐒 Users":
         report_option = st.selectbox('Select a report', ['User table', 'Faction distribution', 'User logs by location',
-                                     'Body count'], index=0, placeholder="Choose an option", disabled=False, label_visibility="visible")
+                                     'Body count', 'Timeline'], index=0, placeholder="Choose an option", disabled=False, label_visibility="visible")
         if report_option == 'User table':
             st.sidebar.header("Save User Faction")
             user_name = st.sidebar.text_input("Enter User Name")
@@ -804,6 +819,96 @@ def main():
             plot_data.index = pd.to_datetime(plot_data.index)
             st.subheader('Body count by faction')
             st.bar_chart(plot_data, use_container_width=True)
+        elif report_option == 'Timeline':
+            cursor = conn.cursor()
+            _, sidebar_fields = create_report_filter_sidebar(locations, faction=False)
+            location_filter = sidebar_fields['location_filter'] 
+            start_datetime = f"{sidebar_fields['start_date']} {sidebar_fields['start_time']}" if sidebar_fields['start_date'] else None
+            end_datetime = f"{sidebar_fields['end_date']} {sidebar_fields['end_time']}" if sidebar_fields['end_date'] else None
+            filters = []
+            if len(sidebar_fields['location_filter']) > 0:
+                for location in sidebar_fields['location_filter']:
+                    if location:
+                        filters.append(f"logs.location = '{location}'")
+            if start_datetime:
+                filters.append(f"enter >= '{start_datetime}'")
+            if end_datetime:
+                filters.append(f"exit <= '{end_datetime}'")
+            sql_query ="""SELECT
+                            location,
+                            enter AS Start,
+                            exit AS Finish
+                        FROM
+                            location_logs WHERE 1=1 AND """ + " AND ".join(filters)
+            if location_filter:
+                location_filter_str = "','".join(location_filter)
+                sql_query += f" AND location IN ('{location_filter_str}')"
+            if start_datetime:
+                sql_query += f" AND enter >= '{start_datetime}'"
+            if end_datetime:
+                sql_query += f" AND exit <= '{end_datetime}'" 
+            sql_query +=""" 
+                        ORDER BY enter;"""
+            cursor.execute(sql_query)
+            data = cursor.fetchall()
+            if not data:
+                st.write('No logs for current filter.')
+            else:
+                columns = ['location', 'Start', 'Finish']
+                df = pd.DataFrame(data, columns=columns)
+                df['Start'] = pd.to_datetime(df['Start'])
+                df['Finish'] = pd.to_datetime(df['Finish'])
+                df.sort_values(by=['Start', 'location'], inplace=True)
+                tasks = []
+                for location, group in df.groupby('location'):
+                    for start, end in zip(group['Start'], group['Finish']):
+                        tasks.append(dict(Task=location, Start=start, Finish=end))
+                num_locations = df['location'].nunique()
+                colorscale = plotly.colors.sequential.Viridis
+                if num_locations > len(colorscale):
+                    colorscale = colorscale * (num_locations // len(colorscale) + 1)
+                colorscale = colorscale[:num_locations]
+                fig = ff.create_gantt(
+                    tasks,
+                    title='Event timeline',
+                    index_col='Task',
+                    show_colorbar=True,
+                    group_tasks=True,
+                    colors=colorscale
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                st.dataframe(df, use_container_width=True)
+                
+                options = []
+                for index, row in df.iterrows():
+                    option = f"{index} - {row['location']} - {row['Start']} to {row['Finish']}"
+                    options.append(option)
+                selected_option = st.selectbox('Select event', options, index=None)
+
+                if selected_option:
+                    selected_index = int(selected_option.split()[0])
+                    selected_row = df.iloc[selected_index]
+                    selected_location = selected_row['location']
+                    selected_start = selected_row['Start']
+                    selected_end = selected_row['Finish']
+                    query = f"""
+                        SELECT DISTINCT users.user_name, users.faction, logs.location
+                        FROM users
+                        JOIN logs ON users.user_hash = logs.character_id OR users.user_hash = logs.receiver_id
+                        WHERE logs.location = '{selected_location}'
+                        AND logs.time >= '{selected_start}'
+                        AND logs.time <= '{selected_end}'
+                        ORDER by 3,2,1
+                    """
+                    cursor.execute(query)
+                    filtered_data = cursor.fetchall()
+                    st.subheader("Logs by location")
+                    with st.container():
+                        if filtered_data:
+                            filtered_df = pd.DataFrame(filtered_data, columns=["User Name", "Faction", "Location"])
+                            filtered_df['Faction'] = filtered_df['Faction'].fillna('Empty')
+                            filtered_df = filtered_df[filtered_df['Faction'] != 'Mob']
+                            st.table(filtered_df)
 
     elif page == "📑 Logs":
         _, sidebar_fields = create_report_filter_sidebar(locations)
