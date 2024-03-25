@@ -138,6 +138,7 @@ def merge_logs():
     Merges combat and location logs.
     """
     location_logs = parse_location()
+    insert_location_logs(location_logs)
     combat_logs = parse_combat()
 
     merged_logs = []
@@ -372,6 +373,47 @@ def update_mob_users():
         conn.rollback()
     finally:
         conn.close()
+
+@log_function_call
+def insert_location_logs(location_logs):
+    """
+    Inserts location logs into a PostgreSQL database.
+    """
+    # Connect to the database
+    conn = connect_to_database()
+    cursor = conn.cursor()
+
+    # Create a table if it doesn't exist
+    cursor.execute('''CREATE TABLE IF NOT EXISTS location_logs (
+                    location_hash TEXT PRIMARY KEY,
+                    location TEXT,
+                    enter TEXT,
+                    exit TEXT
+                )''')
+
+    # Insert location logs
+    for location, log_data in location_logs.items():
+        if not log_data.get('exit', None):
+            continue
+        enter_time = str(log_data.get('enter', ''))
+        exit_time = str(log_data.get('exit', ''))
+        date1 = datetime.strptime(enter_time, "%Y-%m-%d %H:%M:%S")
+        date2 = datetime.strptime(exit_time, "%Y-%m-%d %H:%M:%S")
+        if date1 >= date2:
+            continue
+
+        location_log = [location, str(enter_time), str(exit_time)]
+        location_hash = generate_hash(",".join(location_log))
+        try:
+            cursor.execute("""
+                INSERT INTO location_logs (location_hash, location, enter, exit)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (location_hash) DO NOTHING
+            """, (location_hash, location, enter_time, exit_time))
+        except psycopg2.IntegrityError:
+            pass
+    conn.commit()
+    conn.close()
 
 
 @log_function_call
