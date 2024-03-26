@@ -233,7 +233,8 @@ def import_logs():
         batch_users.add((log_data[7], log[2]))
         batch_users.add((log_data[8], log[3]))
 
-    insert_batch_user_data(batch_users)
+    if len(batch_users) > 0:
+        insert_batch_user_data(batch_users)
     insert_batch_log_data(merged_logs)
     now = datetime.now()
     print("> ", now.strftime("%Y-%m-%d %H:%M:%S"), ": finished.", flush=True)
@@ -393,7 +394,7 @@ def insert_location_logs(location_logs):
 
     # Insert location logs
     for location, log_data in location_logs.items():
-        if not log_data.get('exit', None):
+        if not log_data.get('exit', None) or not log_data.get('enter', None):
             continue
         enter_time = str(log_data.get('enter', ''))
         exit_time = str(log_data.get('exit', ''))
