@@ -2,6 +2,8 @@
 
 This project is an AA Insights, which provides various functionalities for analyzing user logs within the ArcheRage game environment. The analyzer is built using Python and utilizes Streamlit for the web interface.
 
+App Preview: https://youtu.be/9tgOi_bWenc / https://youtu.be/aDkk0lr7hws
+
 ![logo](app/logo300x300.png)
 
 ## Project Structure
