@@ -2,7 +2,8 @@
 
 This project is an AA Insights, which provides various functionalities for analyzing user logs within the ArcheRage game environment. The analyzer is built using Python and utilizes Streamlit for the web interface.
 
-App Preview: https://youtu.be/9tgOi_bWenc / https://youtu.be/aDkk0lr7hws
+App Preview: https://youtu.be/9tgOi_bWenc 
+Timeline feature preview: https://youtu.be/aDkk0lr7hws
 
 ![logo](app/logo300x300.png)
 
@@ -64,10 +65,6 @@ The cron import and update data in the database, theres a job that import logs a
 
 ## SHOUT OUT TO
 <div class="row">
-    <div class="col text-center">
-        <img src="app/barcode_logo.png" alt="Barcode Guild" width="80">
-        <br>Barcode Guild
-    </div>
     <div class="col text-center">
         <img src="app/united_east_logo.png" alt="United East" width="80">
         <br>United East
